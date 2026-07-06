@@ -1,0 +1,147 @@
+services:
+
+  kafka:
+    image: apache/kafka:latest
+    container_name: kafka
+    ports:
+      - "9092:9092"   # internal (Flink ↔ Kafka trong Docker)
+      - "9093:9093"   # external (Producer trên host)
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:9093,CONTROLLER://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9094
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 3
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo '' | nc localhost 9092 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    networks:
+      - crypto-net
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8089:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      - kafka
+    networks:
+      - crypto-net
+
+  flink-jobmanager:
+    image: flink:1.18-scala_2.12-java17
+    container_name: flink-jobmanager
+    command: jobmanager
+    ports:
+      - "8081:8081"
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - |  
+        FLINK_PROPERTIES=
+        taskmanager.numberOfTaskSlots: 3
+        parallelism.default: 3
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9249
+    volumes:
+      - ./flink-job/target:/opt/flink/usrlib
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/overview || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - crypto-net
+
+  flink-taskmanager:
+    image: flink:1.18-scala_2.12-java17
+    command: taskmanager
+    environment:
+      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
+      - |                          # mỗi TM cung cấp 3 slot song song
+        FLINK_PROPERTIES=
+        taskmanager.numberOfTaskSlots: 3
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9249
+    depends_on:
+      flink-jobmanager:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+    networks:
+      - crypto-net
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - crypto-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+      # Pre-configure Prometheus datasource (Grafana provisioning)
+      GF_DATASOURCES_DEFAULT_URL: http://prometheus:9090
+    depends_on:
+      - postgres
+      - prometheus
+    networks:
+      - crypto-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"   # giữ 7 ngày metrics
+    networks:
+      - crypto-net
+
+networks:
+  crypto-net:
+    driver: bridge
+
+volumes:
+  postgres-data:

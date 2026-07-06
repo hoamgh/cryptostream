@@ -1,0 +1,45 @@
+# ========== Env ==========
+.env
+
+# ========== Java / Maven ==========
+flink-job/target/
+flink-job/*.iml
+*.class
+*.jar
+*.war
+
+# ========== Python ==========
+producer/venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# ========== IDE ==========
+.idea/
+.vscode/
+*.iml
+.project
+.classpath
+.settings/
+
+# ========== Docker ==========
+postgres-data/
+
+# ========== OS ==========
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ========== Temp / Debug files ==========
+*.txt
+!README.txt
+prom_*.json
+prom_*.yaml
+prometheus_metric_names.json
+current-metrics.txt
+help-metrics.txt
+
+# ========== Misc ==========
+implementation_plan.md
+test.py
+tmp_*.py

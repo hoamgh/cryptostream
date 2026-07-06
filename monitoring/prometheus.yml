@@ -1,0 +1,33 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# ──────────────────────────────────────────────
+#  Scrape configs
+# ──────────────────────────────────────────────
+scrape_configs:
+
+  # Flink JobManager metrics (Prometheus reporter built-in)
+  - job_name: 'flink-jobmanager'
+    static_configs:
+      - targets: ['flink-jobmanager:9249']
+    metrics_path: /
+
+  # Flink TaskManager metrics
+  - job_name: 'flink-taskmanager'
+    dns_sd_configs:
+      - names:
+          - 'flink-taskmanager'
+        type: 'A'
+        port: 9249
+    metrics_path: /
+
+  # PostgreSQL Exporter (nếu thêm postgres-exporter vào docker-compose)
+  # - job_name: 'postgres'
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
